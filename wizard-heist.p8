@@ -1,5 +1,5 @@
 pico-8 cartridge // http://www.pico-8.com
-version 38
+version 41
 __lua__
 --wizard heist
 --by thehans255
@@ -8,16 +8,16 @@ __lua__
 map_palettes={
  [0]={1,1,5,5,5,6,7,13,
   6,7,7,6,13,6,7,1},
- [0.5]={1,2,3,4,5,6,7,8,
+ [1.0]={1,2,3,4,5,6,7,8,
   9,10,11,12,13,14,15,0},
  [7]={1,2,3,4,5,6,7,8,
   9,10,11,12,13,14,15,0},
  [10]={2,2,2,2,2,2,2,2,
   2,2,2,2,2,2,2,0},
- [10.5]={8,8,8,8,8,8,8,8,
-  8,8,8,8,8,8,8,0},
- [999]={8,8,8,8,8,8,8,8,
-  8,8,8,8,8,8,8,0},
+ [11]={0,8,5,8,5,8,7,8,
+  8,7,8,8,8,8,8,0},
+ [999]={0,8,5,8,5,8,7,8,
+  8,7,8,8,8,8,8,0},
 }
 fillp_order={
  1,256,32,8192,
@@ -41,12 +41,7 @@ castle={
  },
  size={w=5,h=5},
  p_start={x=76,y=5},
- w_start={x=8,y=12},
- w_patrol={
-  {x=8,y=8},{x=8,y=48},
-  {x=24,y=76},{x=76,y=76},
-  {x=76,y=24},{x=40,y=8},
- }
+ w_start={x=8,y=12}
 }
 
 --utils
@@ -166,12 +161,6 @@ function _move_player()
  if (btn(1)) player.x+=.125
  if (btn(2)) player.y-=.125
  if (btn(3)) player.y+=.125
- if walk and not player.walk_prev
-  then sfx(1)
- elseif not walk and
-  player.walk_prev then
-  sfx(1,-2)
- end
  player.walk_prev=walk
  push_out_of_walls(player)
  if flr(player.x/16)~=rx
@@ -180,6 +169,7 @@ function _move_player()
    update_times(0)
    if not wizard.started then
     wizard.started=true
+    tele_flash.t = t.now
     music(0)
    end
  end
@@ -270,46 +260,45 @@ end
 function _move_wizard()
  if (not wizard.started) return
  wizard.alarm_prev=wizard.alarmed
+ if (abs(player.x-wizard.x)<12
+  and abs(player.y-wizard.y)<12)
+  then
+   wizard.aggro+=0.5
+ end
  wizard.aggro=max(
   wizard.aggro-0.3,t.room_dur)
- local spd
- if t.now-tele_flash.t<1.2 then
-  spd=0.01
- else
-  spd=0.11
- end
+ wizard.aggro=min(wizard.aggro, 999)
  local target=castle.w_start
- if wizard.aggro>10
-  or (abs(player.x-wizard.x)<12
-  and abs(player.y-wizard.y)<12)
+ if wizard.aggro>10 or #game_treasures==0
  then
+  wizard.alarmed=true
   target=player
-  if player.x\16==wizard.x\16
-   and player.y\16==wizard.y\16
-  then
-   wizard.alarmed=true
-  end
  else
   wizard.alarmed=false
-  target=castle.w_patrol[
-   flr(rem(t.now,120)/20)+1]
+  target=rnd(game_treasures)
  end
  if t.now-tele_flash.t>=10
   and (abs(target.x-wizard.x)>16
   or abs(target.y-wizard.y)>16)
   then
-   local theta=rnd()
+   local theta=rnd(256)/256
    wizard.x=target.x+cos(theta)*4
    wizard.y=target.y+sin(theta)*4
    tele_flash={
     x=wizard.x,y=wizard.y,
-    t=t.now,s=rnd()
+    t=t.now,s=(rnd(256)/256)
    }
-   if abs(player.x-tele_flash.x)<16
-    and abs(player.y-tele_flash.y)<16
+   if abs(player.x-tele_flash.x)<8
+    and abs(player.y-tele_flash.y)<8
     then
-     sfx(8)
+     sfx(8, 0)
    end
+ end
+ local spd
+ if t.now-tele_flash.t<1.2 then
+  spd=0.01
+ else
+  spd=0.10
  end
  local tdx=sin(t.now/10)
  local tdy=cos(t.now/10)
@@ -396,12 +385,6 @@ function draw_terrain()
   (castle.size.w+1)*128,
   (castle.size.h+1)*128,
   3)
- local wincol=10
- if (rem(t.now,0.5)<0.25) wincol=9  
- rectfill(-128,(castle.size.h+0.5)*128,
-  (castle.size.w+1)*128,
-  (castle.size.h+0.6)*128,
-  wincol)
  --draw map sections
  for i=0,castle.size.w-1 do
   for j=0,castle.size.h-1 do
@@ -427,6 +410,7 @@ function draw_chars()
  do
   spr(96+tr.s,tr.x*8,tr.y*8)
  end
+ draw_finish_line()
  draw_tele_flash()
  spr(64,player.x*8,player.y*8)
  spr(80,wizard.x*8,wizard.y*8)
@@ -439,6 +423,15 @@ function draw_tele_flash()
    tele_flash.x*8,tele_flash.y*8,
    sqrt(dt)*128,7)
  end
+end
+
+function draw_finish_line()
+ local wincol=10
+ if (rem(t.now,0.5)<0.25) wincol=9
+ rectfill(-128,(castle.size.h+0.5)*128,
+  (castle.size.w+1)*128,
+  (castle.size.h+0.6)*128,
+  wincol)
 end
 
 function draw_hud()
@@ -458,8 +451,9 @@ function draw_hud()
    print(t_left,3,2,6)
   end
  end
- if abs(wizard.x-player.x)<16
-  and abs(wizard.y-player.y)<16
+ if abs(wizard.x-player.x)<24
+  and abs(wizard.y-player.y)<24
+  and (not wizard.alarmed)
  then
   sspr(64,96,64,8,64,0)
  end
@@ -543,7 +537,7 @@ end
 
 function _draw_game_over()
  local liney=t.now*30
- rect(0,liney-10,127,liney,0)
+ rectfill(0,liney-10,127,liney,0)
  print("game over",46,60,6)
  print("press 🅾️/❎",42,120,6)
 end
